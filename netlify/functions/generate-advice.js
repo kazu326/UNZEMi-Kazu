@@ -31,22 +31,28 @@ exports.handler = async function(event, context) {
     let levelDescription = '';
     switch (adviceLevel) {
         case 'high-level':
-            levelDescription = 'プロフェッショナルな視点から、より高度なアドバイスを、';
+            // ハイレベル: スト6のプロシーンや、より深い読み合いに焦点を当てる
+            levelDescription = 'ストリートファイター6のプロフェッショナルな視点から、より高度で深い読み合いの戦略や練習法について、端的に、かつ具体的で実践的なアドバイスを、';
             break;
         case 'gamer':
-            levelDescription = 'ゲーマー向けに、実践的な視点から、';
+            // ゲーマー向け: スト6のランクマッチや対戦会で役立つ実践的なアドバイス
+            levelDescription = 'ストリートファイター6のゲーマー向けに、ランクマッチや対戦会で即座に役立つ実践的なアドバイスや、具体的なコンボ練習の例も交えながら、端的に、かつ具体的で実践的なアドバイスを、';
             break;
         case 'enjoy':
-            levelDescription = 'エンジョイ勢向けに、楽しく上達できるような、';
+            // エンジョイ: スト6を楽しくプレイするための、気軽で分かりやすいアドバイス
+            levelDescription = 'ストリートファイター6を楽しくプレイするための、気軽で分かりやすいアドバイスや、ゲームを継続するモチベーション維持につながるヒントも交えながら、端的に、かつ具体的で実践的なアドバイスを、';
             break;
         case 'kid':
-            levelDescription = '子供にも分かりやすく、優しく、';
+            // 子供向け: スト6のキャラクターや動きに例えながら、分かりやすく優しいアドバイス
+            levelDescription = 'ストリートファイター6のキャラクターや動きに例えながら、子供にも分かりやすく、優しく、短く、端的に、かつ具体的で実践的なアドバイスを、';
             break;
         default:
-            levelDescription = '実践的な視点から、';
+            // デフォルト: ゲーマー向けに近い実践的なアドバイス
+            levelDescription = 'ストリートファイター6の読み合いにおいて、実践的なアドバイスや具体的な練習の例も交えながら、端的に、かつ具体的で実践的なアドバイスを、';
     }
 
-    const prompt = `あなたのパターン認識力：${scores.patternRecognition}点、予測力：${scores.prediction}点、反応速度：${scores.reactionSpeed}点、多重読み：${scores.multiLayerReading}点、選択肢多様性：${scores.diversityOfOptions}点、メンタル耐性：${scores.mentalResilience}点、という10点満点での結果です。${levelDescription}それぞれの強み・伸ばすと良い能力や練習アドバイスを端的に教えてください。`;
+    // プロンプトにスト6のコンテキストと簡潔性を追加
+    const prompt = `ストリートファイター6の読み合いにおいて、あなたのパターン認識力：${scores.patternRecognition}点、予測力：${scores.prediction}点、反応速度：${scores.reactionSpeed}点、多重読み：${scores.multiLayerReading}点、選択肢多様性：${scores.diversityOfOptions}点、メンタル耐性：${scores.mentalResilience}点、という10点満点での結果です。${levelDescription}それぞれの強み・伸ばすと良い能力や練習アドバイスを教えてください。`;
 
     let chatHistory = [];
     chatHistory.push({ role: "user", parts: [{ text: prompt }] });
@@ -114,3 +120,4 @@ exports.handler = async function(event, context) {
         }
     }
 };
+
