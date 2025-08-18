@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>格ゲー読み合いスキル診断シート</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN for radar chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Interフォントを適用 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+
+        /* カスタムスタイル */
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background-color: #ffffff;
+            border-radius: 1rem; /* Rounded corners */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1.5rem;
+        }
+
+        .slider-label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #374151; /* Dark gray text */
+        }
+
+        .slider {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 5px;
+            background: #d1d5db; /* Light gray track */
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+
+        .slider:hover {
+            opacity: 1;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #10b981; /* Green thumb */
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #10b981; /* Green thumb */
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .score-display {
+            margin-left: 0.75rem;
+            font-weight: 500;
+            color: #4b5563; /* Medium gray text */
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-primary {
+            background-color: #10b981; /* Green */
+            color: #ffffff;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background-color: #059669; /* Darker green */
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background-color: #6b7280; /* Gray */
+            color: #ffffff;
+            border: none;
+        }
+
+        .btn-secondary:hover {
+            background-color: #4b5563; /* Darker gray */
+            transform: translateY(-1px);
+        }
+
+        .btn-share {
+            background-color: #3b82f6; /* Blue */
+            color: #ffffff;
+            border: none;
+        }
+
+        .btn-share:hover {
+            background-color: #2563eb; /* Darker blue */
+            transform: translateY(-1px);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #10b981;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        canvas {
+            max-width: 100%; /* Ensure canvas scales on smaller screens */
+            height: auto; /* Maintain aspect ratio */
+        }
+
+        .select-container {
+            margin-bottom: 1.5rem;
+        }
+
+        .select-label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #374151;
+        }
+
+        .select-box {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            background-color: #ffffff;
+            appearance: none; /* Remove default arrow */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='currentColor'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1.5em;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+    <div id="app-container" class="container">
+        <!-- フォーム基本仕様イメージ -->
+        <section id="form-section">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">格ゲー読み合いスキル診断シート</h1>
+            <p class="text-center text-gray-600 mb-8">
+                あなたの“読み合いスキル”を6つの観点で自己評価し、レーダーチャートで強みや課題を可視化するための診断フォームです。<br>
+                1試合、または直近の対戦内容をもとに、各項目を**1点（全くできない）〜10点（常にできる）**で自己評価してください。
+            </p>
+
+            <div class="space-y-6">
+                <!-- 設問項目・具体例（6軸バージョン） -->
+                <div class="slider-group">
+                    <div class="slider-container">
+                        <label for="patternRecognition" class="slider-label">1. パターン認識力
+                            <span class="text-sm text-gray-500 block">
+                                (相手のクセ・動き・パターンに、何回目の対戦で気づけますか？)
+                                <br>参考：
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    <li>**1-3点:** 相手の行動パターンをほとんど認識できない。</li>
+                                    <li>**4-7点:** 何度か対戦すれば、ある程度のパターンに気づける。</li>
+                                    <li>**8-10点:** ほぼ初見で相手の主要な行動パターンや癖を見抜ける。</li>
+                                </ul>
+                            </span>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="patternRecognition" min="1" max="10" value="5" class="slider">
+                            <span id="patternRecognitionScore" class="score-display">5点</span>
+                        </div>
+                    </div>
+
+                    <div class="slider-container">
+                        <label for="prediction" class="slider-label">2. 予測力（先読み反応）
+                            <span class="text-sm text-gray-500 block">
+                                (相手の攻撃・行動をどのくらいの頻度で“先回り”できましたか？ 例：飛び・突進・攻撃タイミングを先読みで刺した回数)
+                                <br>参考：
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    <li>**1-3点:** ほとんど予測が当たらない、または予測を試みない。</li>
+                                    <li>**4-7点:** たまに予測が当たり、相手の行動を潰せる場面がある。</li>
+                                    <li>**8-10点:** 相手の行動の多くを先読みし、有利な状況を作り出せる。</li>
+                                </ul>
+                            </span>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="prediction" min="1" max="10" value="5" class="slider">
+                            <span id="predictionScore" class="score-display">5点</span>
+                        </div>
+                    </div>
+
+                    <div class="slider-container">
+                        <label for="reactionSpeed" class="slider-label">3. 反応速度・最適対応力
+                            <span class="text-sm text-gray-500 block">
+                                (見てからの差し返しや対空への成功体感率は？)
+                                <br>参考：
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    <li>**1-3点:** 相手の確定反撃や対空をほとんど成功させられない。</li>
+                                    <li>**4-7点:** 半分程度は見てから対応できるが、安定しない。</li>
+                                    <li>**8-10点:** ほとんどの見てからの対応（対空、差し返しなど）を高い精度で成功させられる。</li>
+                                </ul>
+                            </span>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="reactionSpeed" min="1" max="10" value="5" class="slider">
+                            <span id="reactionSpeedScore" class="score-display">5点</span>
+                        </div>
+                    </div>
+
+                    <div class="slider-container">
+                        <label for="multiLayerReading" class="slider-label">4. 多重読み・心理戦
+                            <span class="text-sm text-gray-500 block">
+                                (「相手に読まれることを更に読んで駆け引きが出来ましたか？」)
+                                <br>参考：
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    <li>**1-3点:** 相手の一手先に読むのが精一杯で、読み合いの裏をかくことができない。</li>
+                                    <li>**4-7点:** 相手の読みを意識し、時折裏をかく行動が取れる。</li>
+                                    <li>**8-10点:** 相手がどう読んでいるかを推測し、その更に裏をかくような高度な心理戦を仕掛けられる。</li>
+                                </ul>
+                            </span>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="multiLayerReading" min="1" max="10" value="5" class="slider">
+                            <span id="multiLayerReadingScore" class="score-display">5点</span>
+                        </div>
+                    </div>
+
+                    <div class="slider-container">
+                        <label for="diversityOfOptions" class="slider-label">5. 選択肢の多様性・柔軟性
+                            <span class="text-sm text-gray-500 block">
+                                (その対戦で使えた選択肢（攻撃/守り/行動）は多かったですか？)
+                                <br>参考：
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    <li>**1-3点:** 使える行動が少なく、パターンが単調になりがち。</li>
+                                    <li>**4-7点:** 状況に応じて複数の選択肢を選べるが、まだ偏りがある。</li>
+                                    <li>**8-10点:** 豊富な選択肢の中から、常に最適な行動を柔軟に選び、相手を翻弄できる。</li>
+                                </ul>
+                            </span>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="diversityOfOptions" min="1" max="10" value="5" class="slider">
+                            <span id="diversityOfOptionsScore" class="score-display">5点</span>
+                        </div>
+                    </div>
+
+                    <div class="slider-container">
+                        <label for="mentalResilience" class="slider-label">6. メンタル耐性・動揺度
+                            <span class="text-sm text-gray-500 block">
+                                (予想外の展開や連続失敗でも落ち着いて判断行動できましたか？)
+                                <br>参考：
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    <li>**1-3点:** 連続で失敗したり、不利な状況になるとすぐに焦り、判断力が低下する。</li>
+                                    <li>**4-7点:** ある程度は落ち着いていられるが、大きな動揺やミスで立て直しに時間がかかることがある。</li>
+                                    <li>**8-10点:** どんな状況でも冷静さを保ち、常に最善の判断と行動を継続できる。</li>
+                                </ul>
+                            </span>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="mentalResilience" min="1" max="10" value="5" class="slider">
+                            <span id="mentalResilienceScore" class="score-display">5点</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AIアドバイスレベル選択 -->
+                <div class="select-container">
+                    <label for="adviceLevel" class="select-label">AIアドバイスレベル</label>
+                    <select id="adviceLevel" class="select-box">
+                        <option value="gamer">ゲーマー向け</option>
+                        <option value="high-level">ハイレベル</option>
+                        <option value="enjoy">エンジョイ</option>
+                        <option value="kid">子供向け</option>
+                    </select>
+                </div>
+
+                <div class="flex flex-col mb-6">
+                    <label for="freeText" class="slider-label">今日の気づき・課題・具体例（任意）</label>
+                    <textarea id="freeText" rows="4" class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200" placeholder="例：相手の飛びに全く反応できませんでした。"></textarea>
+                </div>
+
+                <button id="diagnoseBtn" class="btn btn-primary w-full">診断する</button>
+            </div>
+        </section>
+
+        <!-- 結果表示セクション (最初は非表示) -->
+        <section id="results-section" class="hidden">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">診断結果</h2>
+            <p class="text-center text-gray-600 mb-6">あなたの【読み合いスキルレーダーチャート】とAIによるアドバイスです。</p>
+
+            <div class="mb-8 p-4 bg-gray-50 rounded-lg shadow-inner">
+                <canvas id="radarChart"></canvas>
+            </div>
+
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4">AIアドバイス</h3>
+                <div id="advice-output" class="p-4 bg-blue-50 border border-blue-200 rounded-md text-gray-700 leading-relaxed min-h-[100px] flex items-center justify-center">
+                    <div class="loading-spinner hidden"></div>
+                    <p id="advice-text">診断結果に基づいてAIがアドバイスを生成します...</p>
+                </div>
+            </div>
+
+            <div class="flex justify-center space-x-4">
+                <button id="shareBtn" class="btn btn-share">結果をシェア</button>
+                <button id="goBackBtn" class="btn btn-secondary">戻る</button>
+            </div>
+        </section>
+
+        <!-- カスタムメッセージボックス (alert() の代替) -->
+        <div id="message-box" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full">
+                <h3 id="message-title" class="text-lg font-semibold text-gray-800 mb-3"></h3>
+                <p id="message-content" class="text-gray-600 mb-4"></p>
+                <button id="message-ok-btn" class="btn btn-primary w-full">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // グローバル変数（Canvas環境から提供される場合がある）
+        // NOTE: GitHub Pagesではこれらの変数は定義されないため、直接は使用されません。
+        // APIキーはNetlify Functionsの環境変数として安全に管理されます。
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // DOM要素の取得
+        const formSection = document.getElementById('form-section');
+        const resultsSection = document.getElementById('results-section');
+        const diagnoseBtn = document.getElementById('diagnoseBtn');
+        const shareBtn = document.getElementById('shareBtn');
+        const goBackBtn = document.getElementById('goBackBtn');
+        const radarChartCanvas = document.getElementById('radarChart');
+        const adviceOutput = document.getElementById('advice-output');
+        const adviceText = document.getElementById('advice-text');
+        const loadingSpinner = adviceOutput.querySelector('.loading-spinner');
+        const freeText = document.getElementById('freeText');
+        const adviceLevelSelect = document.getElementById('adviceLevel');
+
+        const messageBox = document.getElementById('message-box');
+        const messageTitle = document.getElementById('message-title');
+        const messageContent = document.getElementById('message-content');
+        const messageOkBtn = document.getElementById('message-ok-btn');
+
+        let myRadarChart; // Chart.jsインスタンスを保持する変数
+
+        // スライダーとスコア表示のペア
+        const sliders = [
+            { id: 'patternRecognition', display: 'patternRecognitionScore' },
+            { id: 'prediction', display: 'predictionScore' },
+            { id: 'reactionSpeed', display: 'reactionSpeedScore' },
+            { id: 'multiLayerReading', display: 'multiLayerReadingScore' },
+            { id: 'diversityOfOptions', display: 'diversityOfOptionsScore' },
+            { id: 'mentalResilience', display: 'mentalResilienceScore' }
+        ];
+
+        // 各スライダーにイベントリスナーを追加
+        sliders.forEach(s => {
+            const slider = document.getElementById(s.id);
+            const display = document.getElementById(s.display);
+            slider.addEventListener('input', () => {
+                display.textContent = `${slider.value}点`;
+            });
+        });
+
+        // カスタムメッセージボックス表示関数
+        function showMessageBox(title, content) {
+            messageTitle.textContent = title;
+            messageContent.textContent = content;
+            messageBox.classList.remove('hidden');
+        }
+
+        // カスタムメッセージボックス非表示関数
+        messageOkBtn.addEventListener('click', () => {
+            messageBox.classList.add('hidden');
+        });
+
+        // セクション表示/非表示ヘルパー関数
+        function showElement(element) {
+            element.classList.remove('hidden');
+        }
+
+        function hideElement(element) {
+            element.classList.add('hidden');
+        }
+
+        /**
+         * レーダーチャートを生成します。
+         * @param {object} scores - スキルスコアのオブジェクト
+         */
+        function createRadarChart(scores) {
+            const ctx = radarChartCanvas.getContext('2d');
+
+            // 既存のチャートがあれば破棄
+            if (myRadarChart) {
+                myRadarChart.destroy();
+            }
+
+            myRadarChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: [
+                        'パターン認識力',
+                        '予測力',
+                        '反応速度',
+                        '多重読み',
+                        '選択肢多様性',
+                        'メンタル耐性'
+                    ],
+                    datasets: [{
+                        label: 'あなたの読み合いスキル',
+                        data: [
+                            scores.patternRecognition,
+                            scores.prediction,
+                            scores.reactionSpeed,
+                            scores.multiLayerReading,
+                            scores.diversityOfOptions,
+                            scores.mentalResilience
+                        ],
+                        backgroundColor: 'rgba(16, 185, 129, 0.4)', // Green with transparency
+                        borderColor: '#10b981', // Green
+                        borderWidth: 2,
+                        pointBackgroundColor: '#059669', // Darker green
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#059669'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true, // アスペクト比を維持
+                    scales: {
+                        r: {
+                            angleLines: {
+                                display: true
+                            },
+                            grid: {
+                                color: 'rgba(200, 200, 200, 0.2)'
+                            },
+                            pointLabels: {
+                                font: {
+                                    size: 14,
+                                    color: '#374151' // Dark gray for labels
+                                }
+                            },
+                            suggestedMin: 1, // 10段階評価なので最小値を1に
+                            suggestedMax: 10, // 10段階評価なので最大値を10に
+                            ticks: {
+                                beginAtZero: false, // 最小値が1なのでfalse
+                                stepSize: 1, // 1点刻み
+                                color: '#6b7280', // Medium gray for ticks
+                                backdropColor: 'rgba(255, 255, 255, 0.8)' // 背景色を少し透明に
+                            },
+                            // レーダーの背景色
+                            backgroundColor: 'rgba(249, 250, 251, 0.7)'
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false // 凡例を非表示
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.raw + '点';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Netlify Functionを呼び出してAIアドバイスを生成します。
+         * @param {object} scores - スキルスコアのオブジェクト
+         */
+        async function generateAdvice(scores) {
+            adviceText.textContent = ''; // Clear previous text
+            showElement(loadingSpinner); // Show loading spinner
+            adviceOutput.classList.remove('flex', 'items-center', 'justify-center'); // Remove centering for text flow
+
+            const selectedAdviceLevel = adviceLevelSelect.value;
+
+            // Netlify Functionに送るデータ
+            const requestBody = {
+                scores: scores,
+                adviceLevel: selectedAdviceLevel
+            };
+
+            const apiUrl = '/.netlify/functions/generate-advice'; // Netlify Functionのエンドポイント
+
+            let retryCount = 0;
+            const maxRetries = 5;
+            const baseDelay = 1000; // 1 second
+
+            while (retryCount < maxRetries) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody) // サーバーにデータを送る
+                    });
+
+                    if (response.status === 429) { // Too Many Requests
+                        const delay = baseDelay * Math.pow(2, retryCount);
+                        console.warn(`Rate limit exceeded. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        retryCount++;
+                        continue;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.advice) { // Netlify Functionからのレスポンスは { advice: "..." }
+                        adviceText.innerHTML = result.advice.replace(/\n/g, '<br>'); // 改行を<br>タグに変換
+                    } else {
+                        adviceText.textContent = "AIアドバイスの生成に失敗しました。";
+                        console.error("Unexpected API response structure:", result);
+                    }
+                    break; // Success, exit loop
+                } catch (error) {
+                    console.error("Error generating AI advice:", error);
+                    if (retryCount < maxRetries - 1) {
+                        const delay = baseDelay * Math.pow(2, retryCount);
+                        console.warn(`Fetch failed. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        retryCount++;
+                    } else {
+                        adviceText.textContent = "AIアドバイスの生成中にエラーが発生しました。時間をおいて再度お試しください。";
+                    }
+                }
+            }
+            hideElement(loadingSpinner); // Hide loading spinner
+        }
+
+        // 診断ボタンクリックイベント
+        diagnoseBtn.addEventListener('click', () => {
+            const scores = {
+                patternRecognition: parseInt(document.getElementById('patternRecognition').value),
+                prediction: parseInt(document.getElementById('prediction').value),
+                reactionSpeed: parseInt(document.getElementById('reactionSpeed').value),
+                multiLayerReading: parseInt(document.getElementById('multiLayerReading').value),
+                diversityOfOptions: parseInt(document.getElementById('diversityOfOptions').value),
+                mentalResilience: parseInt(document.getElementById('mentalResilience').value)
+            };
+
+            hideElement(formSection);
+            showElement(resultsSection);
+
+            createRadarChart(scores);
+            generateAdvice(scores);
+        });
+
+        // 戻るボタンクリックイベント
+        goBackBtn.addEventListener('click', () => {
+            hideElement(resultsSection);
+            showElement(formSection);
+            // フォームの状態をリセットする場合はここに追加
+            adviceText.textContent = '診断結果に基づいてAIがアドバイスを生成します...';
+            adviceOutput.classList.add('flex', 'items-center', 'justify-center'); // Reset centering
+        });
+
+        // シェアボタンクリックイベント
+        shareBtn.addEventListener('click', () => {
+            // スクリーンショット機能はブラウザのAPIでは直接実行できないため、ユーザーに手動操作を促す
+            // または、別途サーバーサイド連携が必要になる
+            showMessageBox(
+                '結果をシェア',
+                'レーダーチャート画像をスクリーンショットし、Discordなどに投稿してください！'
+            );
+        });
+
+        // 初期表示時にすべてのスライダーのスコアを更新
+        window.onload = function() {
+            sliders.forEach(s => {
+                const slider = document.getElementById(s.id);
+                const display = document.getElementById(s.display);
+                display.textContent = `${slider.value}点`;
+            });
+        };
+    </script>
+</body>
+</html>
