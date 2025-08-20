@@ -13,18 +13,37 @@ exports.handler = async function(event, context) {
         };
     }
 
-    // リクエストボディをパース
-    const { scores, adviceLevel, playerRank, userFreeText } = JSON.parse(event.body);
+    let requestBody;
+    try {
+        // リクエストボディをパース
+        requestBody = JSON.parse(event.body);
+    } catch (parseError) {
+        console.error("Error parsing request body:", parseError);
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ message: 'Invalid JSON in request body.' }),
+        };
+    }
+
+    const { scores, adviceLevel, playerRank, userFreeText } = requestBody;
 
     // Gemini APIキーを環境変数から取得
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
     // APIキーがない場合はエラーを返す
     if (!GEMINI_API_KEY) {
-        console.error("GEMINI_API_KEY is not set in Netlify environment variables.");
+        console.error("GEMINI_API_KEY is not set in Netlify environment variables. Please configure it in your Netlify site settings.");
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: 'API key not configured.' }),
+            body: JSON.stringify({ message: 'API key not configured on the server.' }),
+        };
+    }
+
+    // 入力値のバリデーションを強化
+    if (!scores || !adviceLevel || !playerRank) {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ message: 'Missing required parameters: scores, adviceLevel, or playerRank.' }),
         };
     }
 
@@ -227,6 +246,26 @@ exports.handler = async function(event, context) {
         },
     };
 
+    // ヘルパー関数群（プロンプト内でスコアの意味を伝えるため） ---
+    // ここでsf6KnowledgeBaseを直接参照するように変更
+    function getSkillNameInJapanese(key) {
+        switch(key) {
+            case 'patternRecognition': return 'パターン認識力';
+            case 'prediction': return '予測力';
+            case 'reactionSpeed': return '反応速度・最適対応力';
+            case 'multiLayerReading': return '多重読み・心理戦';
+            case 'diversityOfOptions': return '選択肢の多様性・柔軟性';
+            case 'mentalResilience': return 'メンタル耐性・動揺度';
+            default: return key;
+        }
+    }
+
+    function getDescriptionForSkillAndRank(skillKey, rank, type) {
+        // sf6KnowledgeBaseから指定されたスキル、ランク、タイプの情報を取得
+        // 存在しない場合は空文字列を返す
+        return sf6KnowledgeBase[skillKey]?.[rank]?.[type] || '';
+    }
+
     // 自由記述の内容をアドバイスに含めるかどうかの判断
     let freeTextPrompt = "";
     if (userFreeText && userFreeText.trim().length > 0) {
@@ -236,20 +275,24 @@ exports.handler = async function(event, context) {
     // スコアの詳細な説明をプロンプトに組み込む
     const scoreDetailsPrompt = Object.keys(scores).map(key => {
         const score = scores[key];
-        let description = "";
-        switch(key) {
-            case 'patternRecognition': description = getPatternRecognitionDescription(score); break;
-            case 'prediction': description = getPredictionDescription(score); break;
-            case 'reactionSpeed': description = getReactionSpeedDescription(score); break;
-            case 'multiLayerReading': description = getMultiLayerReadingDescription(score); break;
-            case 'diversityOfOptions': description = getDiversityOfOptionsDescription(score); break;
-            case 'mentalResilience': description = getMentalResilienceDescription(score); break;
-        }
-        return `${getSkillNameInJapanese(key)}：${score}点（これは${playerRank}ランクのストリートファイター6プレイヤーにおいて、${description}レベルに相当します）`;
+        const typicalIssues = getDescriptionForSkillAndRank(key, playerRank, 'typicalIssues');
+        const challenges = getDescriptionForSkillAndRank(key, playerRank, 'challenges');
+
+        // スコアのレベル分けロジックはクライアントサイドJSと共通化されていないため、
+        // ここでは単純にランクと典型的な課題、今後の課題を提示する形に変更
+        // もしより詳細なスコアごとの説明が必要なら、別途関数を定義するか、
+        // クライアントサイドと同じロジックをここに移植する必要があります。
+        return `${getSkillNameInJapanese(key)}：${score}点\n` +
+               `  - 典型的な課題: ${typicalIssues}\n` +
+               `  - 今後の課題: ${challenges}`;
     }).join('\n');
 
     let levelInstruction = '';
-    switch (adviceLevel) {
+    // adviceLevel が sf6KnowledgeBase に存在しない場合のデフォルト値を追加
+    const validAdviceLevels = ['high-level', 'gamer', 'enjoy', 'kid'];
+    const actualAdviceLevel = validAdviceLevels.includes(adviceLevel) ? adviceLevel : 'gamer'; // デフォルトは'gamer'
+
+    switch (actualAdviceLevel) {
         case 'high-level':
             levelInstruction = `プロフェッショナルな視点から、${playerRank}ランクのプレイヤーが次に目指すべき、より高度で深い読み合いの戦略や練習法について、`;
             break;
@@ -263,13 +306,13 @@ exports.handler = async function(event, context) {
             levelInstruction = `キャラクターや動きに例えながら、${playerRank}ランクのお友達にも分かりやすく、優しく、`;
             break;
         default:
-            levelInstruction = `実践的なアドバイスや具体的な練習の例も交えながら、`;
+            levelInstruction = `実践的なアドバイスや具体的な練習の例も交えながら、`; // ここは到達しないはずだが、念のため
     }
 
     // AIへの最終プロンプト
     // 知識ベース全体を文字列化せず、関連する部分だけを抽出してプロンプトに組み込む
     const prompt = `あなたはストリートファイター6の専門家であり、最高のコーチです。
-ユーザーは現在のランクが「${playerRank}」で、AIアドバイスレベルを「${adviceLevel}」と指定しています。
+ユーザーは現在のランクが「${playerRank}」で、AIアドバイスレベルを「${actualAdviceLevel}」と指定しています。
 以下の診断結果と、ユーザーの「今日の気づき・課題・具体例」を総合的に考慮し、ストリートファイター6の攻略に特化した、具体的かつ実践的なアドバイスを生成してください。
 
 ### 診断結果:
@@ -281,7 +324,7 @@ ${freeTextPrompt}
     1.  **【典型例・今の状況】**
     2.  **【課題・今後の伸びしろ】**
     3.  **【具体的な練習方法・アドバイス】**
-* **各セクションの間に必ず空行（改行2つ `\\n\\n`）を入れてください。**
+* **各セクションの間に必ず空行（改行2つ \`\\n\\n\`）を入れてください。**
 * **各セクションは最大でも3〜5行程度**の簡潔な文章にまとめてください。余計な情報は含めず、核心を突いた内容にしてください。
 * **ストリートファイター6のシステムや用語を積極的に使い、具体的にアドバイスしてください。**
 * **架空のコンボや誤った技名は絶対に生成しないでください。** 具体例を挙げる際は、知識ベースにある一般的なシステム（例: ドライブインパクト、パリィ、SAなど）に関するものを優先するか、具体的な技名ではなく「対空技」「確定反撃コンボ」といった汎用的な表現を使ってください。
@@ -292,25 +335,25 @@ ${levelInstruction}それぞれの強み・伸ばすと良い能力や練習ア�
 
 ---
 ### 参考情報（AIが参照するためのスト6知識ベース、直接引用せず自然な文章で組み込むこと）:
-${JSON.stringify(sf6KnowledgeBase.general)}
+${JSON.stringify(sf6KnowledgeBase.general || {})} // generalがない場合も考慮
 
 ${getSkillNameInJapanese('patternRecognition')}関連知識:
-${JSON.stringify(sf6KnowledgeBase.patternRecognition[playerRank])}
+${JSON.stringify(sf6KnowledgeBase.patternRecognition[playerRank] || {})}
 
 ${getSkillNameInJapanese('prediction')}関連知識:
-${JSON.stringify(sf6KnowledgeBase.prediction[playerRank])}
+${JSON.stringify(sf6KnowledgeBase.prediction[playerRank] || {})}
 
 ${getSkillNameInJapanese('reactionSpeed')}関連知識:
-${JSON.stringify(sf6KnowledgeBase.reactionSpeed[playerRank])}
+${JSON.stringify(sf6KnowledgeBase.reactionSpeed[playerRank] || {})}
 
 ${getSkillNameInJapanese('multiLayerReading')}関連知識:
-${JSON.stringify(sf6KnowledgeBase.multiLayerReading[playerRank])}
+${JSON.stringify(sf6KnowledgeBase.multiLayerReading[playerRank] || {})}
 
 ${getSkillNameInJapanese('diversityOfOptions')}関連知識:
-${JSON.stringify(sf6KnowledgeBase.diversityOfOptions[playerRank])}
+${JSON.stringify(sf6KnowledgeBase.diversityOfOptions[playerRank] || {})}
 
 ${getSkillNameInJapanese('mentalResilience')}関連知識:
-${JSON.stringify(sf6KnowledgeBase.mentalResilience[playerRank])}
+${JSON.stringify(sf6KnowledgeBase.mentalResilience[playerRank] || {})}
 `;
 
 
@@ -334,7 +377,7 @@ ${JSON.stringify(sf6KnowledgeBase.mentalResilience[playerRank])}
 
             if (response.status === 429) { // Too Many Requests
                 const delay = baseDelay * Math.pow(2, retryCount);
-                console.warn(`Rate limit exceeded. Retrying in ${delay / 1000}ms...`);
+                console.warn(`Rate limit exceeded. Retrying in ${delay / 1000}ms... (Attempt ${retryCount + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 retryCount++;
                 continue;
@@ -343,7 +386,7 @@ ${JSON.stringify(sf6KnowledgeBase.mentalResilience[playerRank])}
             if (!response.ok) {
                 const errorData = await response.text();
                 console.error(`Gemini API error status: ${response.status}, data: ${errorData}`);
-                throw new Error(`Gemini API error! status: ${response.status}`);
+                throw new Error(`Gemini API error! status: ${response.status}, message: ${errorData}`);
             }
 
             const result = await response.json();
@@ -358,81 +401,33 @@ ${JSON.stringify(sf6KnowledgeBase.mentalResilience[playerRank])}
                     body: JSON.stringify({ advice: text }),
                 };
             } else {
-                console.error("Unexpected Gemini API response structure:", result);
+                console.error("Unexpected Gemini API response structure:", JSON.stringify(result, null, 2));
                 return {
                     statusCode: 500,
-                    body: JSON.stringify({ message: 'Failed to get advice from AI (unexpected response).' }),
+                    body: JSON.stringify({ message: 'Failed to get advice from AI (unexpected response structure).' }),
                 };
             }
         } catch (error) {
-            console.error("Error calling Gemini API from Netlify Function:", error);
+            console.error("Error calling Gemini API from Netlify Function:", error.message);
             if (retryCount < maxRetries - 1) {
                 const delay = baseDelay * Math.pow(2, retryCount);
-                console.warn(`Fetch failed. Retrying in ${delay / 1000}ms...`);
+                console.warn(`Fetch failed. Retrying in ${delay / 1000}ms... (Attempt ${retryCount + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 retryCount++;
             } else {
                 return {
                     statusCode: 500,
-                    body: JSON.stringify({ message: 'Failed to generate AI advice after multiple retries.' }),
+                    body: JSON.stringify({ message: `Failed to generate AI advice after multiple retries. Error: ${error.message}` }),
                 };
             }
         }
     }
+
+    // ここに到達することは基本的にはないはずだが、念のため追加
+    return {
+        statusCode: 500,
+        body: JSON.stringify({ message: 'Unknown error occurred after retries.' }),
+    };
 };
 
-// --- ヘルパー関数群（プロンプト内でスコアの意味を伝えるため） ---
-function getSkillNameInJapanese(key) {
-    switch(key) {
-        case 'patternRecognition': return 'パターン認識力';
-        case 'prediction': return '予測力';
-        case 'reactionSpeed': return '反応速度・最適対応力';
-        case 'multiLayerReading': return '多重読み・心理戦';
-        case 'diversityOfOptions': return '選択肢の多様性・柔軟性';
-        case 'mentalResilience': return 'メンタル耐性・動揺度';
-        default: return key;
-    }
-}
-
-function getPatternRecognitionDescription(score) {
-    if (score <= 2) return "相手の基本的な行動パターン（飛び、突進技の多用など）を認識するのが難しい初心者レベル。ドライブゲージやSAゲージの残量に意識が向かない傾向";
-    if (score <= 5) return "相手の主要な行動パターンや癖（例：特定の連携の終わり方、ゲージの使い方）に気づくことがある中級者レベル。ドライブインパクトを返せるようになるが、安定しない";
-    if (score <= 8) return "相手の複雑なセットプレイや心理的な癖、リソース管理まで深く認識できる上級者レベル。相手のゲージ管理を見てOD技やSAの有無を意識できる";
-    return "相手の微細な行動パターン、意識配分、キャラクター固有のフレーム消費の癖まで素早く認識し、それに応じた完璧な対応や戦略変更ができるプロ級レベル。相手の読みの読みまで意識した行動を選択できる";
-}
-
-function getPredictionDescription(score) {
-    if (score <= 2) return "相手の行動を予測する意識が低く、常に後手になっている初心者レベル。防御に徹しがち";
-    if (score <= 5) return "読みを試みるが、成功率はまだ安定しない中級者レベル。読みが当たっても次の行動に繋げられないことがある";
-    if (score <= 8) return "相手の主要な行動（例：飛び込み、置き技、投げ）を先読みし、有利な反撃や差し返しを成功させられる上級者レベル。モダン操作であればアシストコンボを狙える";
-    return "相手の行動パターンと心理を深く読み解き、複数択の中から最も効果的な先読み行動（例：ドライブインパクト返し、パリィ、投げ抜け、大ダメージコンボ）を高い精度で実行できるプロ級レベル";
-}
-
-function getReactionSpeedDescription(score) {
-    if (score <= 2) return "相手の確定反撃や対空攻撃をほとんど防げない初心者レベル。咄嗟の状況判断が遅れる傾向";
-    if (score <= 5) return "半分程度は見てから対応できるが、安定しない中級者レベル。特に画面端や状況が複雑な場面でのミスが多い";
-    if (score <= 8) return "相手の特定の技や行動（例：ドライブインパクト、ドライブラッシュ、ジャンプ攻撃）を見てからの対応（差し返し、対空、投げ抜け）を高い精度で成功させられる上級者レベル。クラシック操作であれば確定反撃コンボを入れられる";
-    return "どんな状況でも相手の行動を見てから最速で最適な反撃や防御行動（例：パニッシュカウンター、大ダメージコンボ、完璧な対空コンボ）を安定して実行できるプロ級レベル。入力精度も極めて高い";
-}
-
-function getMultiLayerReadingDescription(score) {
-    if (score <= 2) return "自分の行動が相手に読まれていることに気づきにくく、同じパターンを繰り返してしまう初心者レベル";
-    if (score <= 5) return "相手が何をしようとしているかを意識し始めるが、その裏をかく行動はまだ難しい中級者レベル";
-    if (score <= 8) return "相手が自分の行動をどう読んでいるかを推測し、その裏をかく行動（例：ドライブインパクトのフェイント、投げのシミー、遅らせ投げ、無敵技のガード、ドライブラッシュのキャンセル）を狙って成功させられる上級者レベル";
-    return "相手の心理を深く読み解き、複数回の読み合いを連続で制する高度な心理戦（例：読みの読み、リソース管理、相手のSAゲージ消費を誘う立ち回り）を展開できるプロ級レベル。相手を手のひらで転がすような感覚がある";
-}
-
-function getDiversityOfOptionsDescription(score) {
-    if (score <= 2) return "使える技や戦術が少なく、同じ攻めや守りを繰り返してしまう初心者レベル。キャラの基本技しか使えない傾向";
-    if (score <= 5) return "ある程度の選択肢は持っているが、状況に合わせた最適な選択ができない中級者レベル。立ち回りがパターン化しやすい";
-    if (score <= 8) return "状況に応じて豊富な選択肢（例：様々な距離での牽制、崩し、防御オプション、リソース運用）を使い分け、相手の対策を困難にさせられる上級者レベル。キャラの強みを引き出せる";
-    return "自分のキャラクターの全アセットを最大限に活用し、どんな状況でも相手の弱点や行動を潰すための最適な選択肢を柔軟に選び、ゲームを支配できるプロ級レベル。キャラ対策も深い";
-}
-
-function getMentalResilienceDescription(score) {
-    if (score <= 2) return "予想外のダメージや連続ヒットでパニックになり、冷静な判断ができない初心者レベル。逆ギレ行動や適当な技を振ってしまう傾向";
-    if (score <= 5) return "不利な状況でも立て直そうとするが、まだ感情に左右されやすい中級者レベル。緊張で入力ミスが増えることがある";
-    if (score <= 8) return "どんなに不利な状況やミスが続いても、感情的にならず、冷静に状況を判断し、最善の行動（例：防御重視、体力リード時の逃げ切り、ゲージ温存）を選択できる上級者レベル";
-    return "プレッシャーのかかる場面や、相手が格上でも常に冷静沈着。ミスを即座に分析し、次のラウンドに活かせるプロ級レベル。相手の精神を揺さぶるような行動も意図的にできる";
-}
 
