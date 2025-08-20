@@ -127,6 +127,17 @@
             transform: translateY(-1px);
         }
 
+        .btn-history {
+            background-color: #f97316; /* Orange */
+            color: #ffffff;
+            border: none;
+        }
+
+        .btn-history:hover {
+            background-color: #ea580c; /* Darker orange */
+            transform: translateY(-1px);
+        }
+
         .hidden {
             display: none;
         }
@@ -330,11 +341,12 @@
                 </div>
 
                 <div class="flex flex-col mb-6">
-                    <label for="freeText" class="slider-label">今日の気づき・課題・具体例（任意）</label>
-                    <textarea id="freeText" rows="4" class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200" placeholder="例：相手の飛びに全く反応できませんでした。"></textarea>
+                    <label for="freeText" class="slider-label">今日の気づき・課題・具体例（任意）<span class="text-xs text-gray-500 block">(AIがこの内容も踏まえてアドバイスをくれます！)</span></label>
+                    <textarea id="freeText" rows="4" class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200" placeholder="例：相手の飛びに全く反応できませんでした。ドライブラッシュからの攻めに対応できませんでした。"></textarea>
                 </div>
 
                 <button id="diagnoseBtn" class="btn btn-primary w-full">診断する</button>
+                <button id="viewHistoryBtn" class="btn btn-history w-full mt-4">診断履歴を見る</button>
             </div>
         </section>
 
@@ -356,8 +368,20 @@
             </div>
 
             <div class="flex justify-center space-x-4">
-                <button id="shareBtn" class="btn btn-share">結果をシェア</button>
+                <button id="saveResultBtn" class="btn btn-primary">診断結果を保存</button>
                 <button id="goBackBtn" class="btn btn-secondary">戻る</button>
+            </div>
+        </section>
+
+        <!-- 診断履歴セクション (最初は非表示) -->
+        <section id="history-section" class="hidden">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">診断履歴</h2>
+            <p class="text-center text-gray-600 mb-6" id="history-loading-text">履歴を読み込んでいます...</p>
+            <div id="history-list" class="space-y-6">
+                <!-- 履歴アイテムがここに動的に追加される -->
+            </div>
+            <div class="flex justify-center space-x-4 mt-8">
+                <button id="backToFormFromHistoryBtn" class="btn btn-secondary">診断フォームに戻る</button>
             </div>
         </section>
 
@@ -371,25 +395,171 @@
         </div>
     </div>
 
-    <script>
-        // グローバル変数（Canvas環境から提供される場合がある）
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <!-- Firebase SDKの読み込み -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, collection, addDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+        // Firebase設定は、Firebase Consoleのプロジェクト設定で確認できます
+        // プロジェクト設定 > 一般 > マイアプリ > SDK のセットアップと構成 > CDN をクリックすると表示されるconfig
+        const firebaseConfig = {
+            apiKey: "YOUR_FIREBASE_API_KEY", // ここを置き換える
+            authDomain: "YOUR_AUTH_DOMAIN", // ここを置き換える
+            projectId: "YOUR_PROJECT_ID", // ここを置き換える
+            storageBucket: "YOUR_STORAGE_BUCKET", // ここを置き換える
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID", // ここを置き換える
+            appId: "YOUR_APP_ID", // ここを置き換える
+            // measurementId: "G-XXXXXXXXXX" // 必要であればこの行も追加
+        };
+
+        // Firebase初期化
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let currentUserId = null;
+        let isAuthReady = false; // 認証準備完了フラグ
+
+        // 認証状態の変化を監視
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // ユーザーがログイン済みの場合（匿名ユーザー含む）
+                currentUserId = user.uid;
+                console.log("Firebase user ID:", currentUserId);
+            } else {
+                // ユーザーがログインしていない場合、匿名でサインイン
+                try {
+                    const anonymousUser = await signInAnonymously(auth);
+                    currentUserId = anonymousUser.user.uid;
+                    console.log("Signed in anonymously. User ID:", currentUserId);
+                } catch (error) {
+                    console.error("Error signing in anonymously:", error);
+                    showMessageBox('エラー', '匿名認証に失敗しました。履歴保存機能が利用できません。');
+                }
+            }
+            isAuthReady = true; // 認証準備完了
+            // 認証後に履歴表示ボタンを有効にする (または初期状態で有効にしておく)
+            // このアプリでは、認証が完了するまで履歴ボタンは無効にしない方がユーザー体験が良い
+            // document.getElementById('viewHistoryBtn').disabled = false;
+        });
+
+        // 診断結果をFirestoreに保存する関数
+        window.saveResultToFirestore = async function(resultData) {
+            if (!isAuthReady || !currentUserId) {
+                showMessageBox('保存エラー', 'ユーザー認証が完了していません。しばらく待ってから再度お試しください。');
+                return;
+            }
+
+            try {
+                // ドキュメントIDとしてタイムスタンプを使用（ユニーク性を確保）
+                // Firestoreのパス: /artifacts/{appId}/users/{userId}/diagnosis_history/{docId}
+                const historyRef = collection(db, `artifacts/${appId}/users/${currentUserId}/diagnosis_history`);
+
+                await addDoc(historyRef, {
+                    ...resultData,
+                    timestamp: new Date() // 保存日時
+                });
+                showMessageBox('保存完了', '診断結果が履歴に保存されました！');
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showMessageBox('保存エラー', '診断結果の保存に失敗しました。詳細: ' + e.message);
+            }
+        };
+
+        // 診断履歴をFirestoreから読み込む関数
+        window.loadHistoryFromFirestore = async function() {
+            if (!isAuthReady || !currentUserId) {
+                document.getElementById('history-loading-text').textContent = '履歴を読み込むには認証が必要です。';
+                return;
+            }
+
+            const historyListDiv = document.getElementById('history-list');
+            historyListDiv.innerHTML = ''; // 既存の履歴をクリア
+            document.getElementById('history-loading-text').classList.remove('hidden'); // ロードテキストを再表示
+            document.getElementById('history-loading-text').textContent = '履歴を読み込んでいます...';
+
+            try {
+                // Firestoreのパス: /artifacts/{appId}/users/{userId}/diagnosis_history
+                const historyRef = collection(db, `artifacts/${appId}/users/${currentUserId}/diagnosis_history`);
+                // FirestoreのorderByには制限があるため、ここでは取得後にJavaScriptでソートします
+                const q = query(historyRef); // ここではorderByは使用しない
+
+                const querySnapshot = await getDocs(q);
+
+                let historyItems = [];
+                querySnapshot.forEach((doc) => {
+                    historyItems.push({ id: doc.id, ...doc.data() });
+                });
+
+                // タイムスタンプで降順ソート（新しいものが上に来るように）
+                historyItems.sort((a, b) => {
+                    const dateA = a.timestamp && typeof a.timestamp.toDate === 'function' ? a.timestamp.toDate() : new Date(0);
+                    const dateB = b.timestamp && typeof b.timestamp.toDate === 'function' ? b.timestamp.toDate() : new Date(0);
+                    return dateB - dateA;
+                });
+
+                if (historyItems.length === 0) {
+                    document.getElementById('history-loading-text').textContent = 'まだ診断履歴はありません。';
+                } else {
+                    document.getElementById('history-loading-text').classList.add('hidden'); // ロードテキストを非表示
+                }
+
+                historyItems.forEach(item => {
+                    const date = item.timestamp && typeof item.timestamp.toDate === 'function' ? item.timestamp.toDate().toLocaleString('ja-JP') : '日付不明';
+                    const scores = item.scores || {};
+                    const advice = item.advice || 'AIアドバイスがありません。';
+                    const playerRank = item.playerRank || '不明';
+                    const adviceLevel = item.adviceLevel || '不明';
+                    const userFreeText = item.userFreeText || '';
+
+
+                    const historyItemDiv = document.createElement('div');
+                    historyItemDiv.className = 'p-4 bg-white rounded-lg shadow';
+                    historyItemDiv.innerHTML = `
+                        <p class="text-sm text-gray-500 mb-2">診断日時: ${date}</p>
+                        <h4 class="font-semibold text-gray-700 mb-2">評価スコア:</h4>
+                        <ul class="list-disc list-inside ml-4 text-sm text-gray-600">
+                            <li>パターン認識力: ${scores.patternRecognition || 'N/A'}点</li>
+                            <li>予測力: ${scores.prediction || 'N/A'}点</li>
+                            <li>反応速度: ${scores.reactionSpeed || 'N/A'}点</li>
+                            <li>多重読み: ${scores.multiLayerReading || 'N/A'}点</li>
+                            <li>選択肢多様性: ${scores.diversityOfOptions || 'N/A'}点</li>
+                            <li>メンタル耐性: ${scores.mentalResilience || 'N/A'}点</li>
+                        </ul>
+                        <h4 class="font-semibold text-gray-700 mt-4 mb-2">AIアドバイス:</h4>
+                        <div class="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-gray-700 whitespace-pre-wrap">${advice.replace(/\n/g, '<br>')}</div>
+                        <p class="text-xs text-gray-500 mt-2">ランク: ${playerRank}, アドバイスレベル: ${adviceLevel}</p>
+                        ${userFreeText ? `<p class="text-xs text-gray-500 mt-2">気づき・課題: ${userFreeText}</p>` : ''}
+                    `;
+                    historyListDiv.appendChild(historyItemDiv);
+                });
+            } catch (e) {
+                console.error("Error loading documents: ", e);
+                document.getElementById('history-loading-text').textContent = '履歴の読み込みに失敗しました。';
+                showMessageBox('履歴読み込みエラー', '履歴の読み込み中にエラーが発生しました。詳細: ' + e.message);
+            }
+        };
+    </script>
+
+    <script>
         // DOM要素の取得
         const formSection = document.getElementById('form-section');
         const resultsSection = document.getElementById('results-section');
+        const historySection = document.getElementById('history-section'); // 新しく追加
         const diagnoseBtn = document.getElementById('diagnoseBtn');
+        const saveResultBtn = document.getElementById('saveResultBtn'); // 新しく追加
         const shareBtn = document.getElementById('shareBtn');
         const goBackBtn = document.getElementById('goBackBtn');
+        const viewHistoryBtn = document.getElementById('viewHistoryBtn'); // 新しく追加
+        const backToFormFromHistoryBtn = document.getElementById('backToFormFromHistoryBtn'); // 新しく追加
         const radarChartCanvas = document.getElementById('radarChart');
         const adviceOutput = document.getElementById('advice-output');
         const adviceText = document.getElementById('advice-text');
         const loadingSpinner = adviceOutput.querySelector('.loading-spinner');
         const freeText = document.getElementById('freeText');
         const adviceLevelSelect = document.getElementById('adviceLevel');
-        const playerRankSelect = document.getElementById('playerRank'); // 新しく追加
+        const playerRankSelect = document.getElementById('playerRank');
 
         const messageBox = document.getElementById('message-box');
         const messageTitle = document.getElementById('message-title');
@@ -397,6 +567,7 @@
         const messageOkBtn = document.getElementById('message-ok-btn');
 
         let myRadarChart; // Chart.jsインスタンスを保持する変数
+        let lastResultData = null; // 最新の診断結果を保存用
 
         // スライダーとスコア表示のペア
         const sliders = [
@@ -530,20 +701,24 @@
          * @param {object} scores - スキルスコアのオブジェクト
          * @param {string} selectedAdviceLevel - 選択されたアドバイスレベル
          * @param {string} selectedPlayerRank - 選択されたプレイヤーランク
+         * @param {string} userFreeText - ユーザーが入力した自由記述の気づきや課題
          */
-        async function generateAdvice(scores, selectedAdviceLevel, selectedPlayerRank) {
+        async function generateAdvice(scores, selectedAdviceLevel, selectedPlayerRank, userFreeText) {
             adviceText.textContent = ''; // Clear previous text
             showElement(loadingSpinner); // Show loading spinner
             adviceOutput.classList.remove('flex', 'items-center', 'justify-center'); // Remove centering for text flow
 
-            // Netlify Functionに送るデータにランク情報を追加
+            // Netlify Functionに送るデータにランク情報と自由記述を追加
             const requestBody = {
                 scores: scores,
                 adviceLevel: selectedAdviceLevel,
-                playerRank: selectedPlayerRank // 新しく追加
+                playerRank: selectedPlayerRank,
+                userFreeText: userFreeText
             };
 
             const apiUrl = '/.netlify/functions/generate-advice'; // Netlify Functionのエンドポイント
+
+            let generatedAdvice = "AIアドバイスの生成に失敗しました。"; // デフォルト値
 
             let retryCount = 0;
             const maxRetries = 5;
@@ -572,9 +747,9 @@
                     const result = await response.json();
 
                     if (result.advice) { // Netlify Functionからのレスポンスは { advice: "..." }
-                        adviceText.innerHTML = result.advice.replace(/\n/g, '<br>'); // 改行を<br>タグに変換
+                        generatedAdvice = result.advice;
+                        adviceText.innerHTML = generatedAdvice.replace(/\n/g, '<br>'); // 改行を<br>タグに変換
                     } else {
-                        adviceText.textContent = "AIアドバイスの生成に失敗しました。";
                         console.error("Unexpected API response structure:", result);
                     }
                     break; // Success, exit loop
@@ -591,6 +766,15 @@
                 }
             }
             hideElement(loadingSpinner); // Hide loading spinner
+
+            // 診断結果を保存用に格納
+            lastResultData = {
+                scores: scores,
+                advice: generatedAdvice, // 生成されたアドバイスを保存
+                adviceLevel: selectedAdviceLevel,
+                playerRank: selectedPlayerRank,
+                userFreeText: userFreeText
+            };
         }
 
         // 診断ボタンクリックイベント
@@ -604,22 +788,53 @@
                 mentalResilience: parseInt(document.getElementById('mentalResilience').value)
             };
             const selectedAdviceLevel = adviceLevelSelect.value;
-            const selectedPlayerRank = playerRankSelect.value; // ランクの選択値を取得
+            const selectedPlayerRank = playerRankSelect.value;
+            const userFreeText = freeText.value;
 
             hideElement(formSection);
             showElement(resultsSection);
+            hideElement(historySection); // 履歴表示中に診断した場合に備えて非表示
 
             createRadarChart(scores);
-            generateAdvice(scores, selectedAdviceLevel, selectedPlayerRank); // ランクを渡す
+            generateAdvice(scores, selectedAdviceLevel, selectedPlayerRank, userFreeText);
         });
 
-        // 戻るボタンクリックイベント
+        // 診断結果保存ボタンクリックイベント
+        saveResultBtn.addEventListener('click', () => {
+            if (lastResultData) {
+                // saveResultToFirestoreはFirebase SDKのscriptタグ内で定義されるグローバル関数
+                window.saveResultToFirestore(lastResultData);
+            } else {
+                showMessageBox('保存エラー', '保存する診断結果がありません。まず診断を実行してください。');
+            }
+        });
+
+        // 診断結果画面から戻るボタンクリックイベント
         goBackBtn.addEventListener('click', () => {
             hideElement(resultsSection);
             showElement(formSection);
             adviceText.textContent = '診断結果に基づいてAIがアドバイスを生成します...';
             adviceOutput.classList.add('flex', 'items-center', 'justify-center'); // Reset centering
         });
+
+        // 診断履歴を見るボタンクリックイベント
+        viewHistoryBtn.addEventListener('click', async () => {
+            hideElement(formSection);
+            hideElement(resultsSection);
+            showElement(historySection);
+            // 履歴を読み込む関数を呼び出す
+            await window.loadHistoryFromFirestore();
+        });
+
+        // 診断履歴画面から診断フォームに戻るボタンクリックイベント
+        backToFormFromHistoryBtn.addEventListener('click', () => {
+            hideElement(historySection);
+            showElement(formSection);
+            // ロード中のテキストを元に戻す
+            document.getElementById('history-loading-text').classList.remove('hidden');
+            document.getElementById('history-loading-text').textContent = '履歴を読み込んでいます...';
+        });
+
 
         // シェアボタンクリックイベント
         shareBtn.addEventListener('click', () => {
@@ -636,8 +851,9 @@
                 const display = document.getElementById(s.display);
                 display.textContent = `${slider.value}点`;
             });
+            // 認証完了まで履歴ボタンを無効化 (今回は自動匿名認証なので不要かもしれませんが、念のため)
+            // viewHistoryBtn.disabled = true;
         };
     </script>
 </body>
 </html>
-
