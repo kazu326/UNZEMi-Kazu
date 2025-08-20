@@ -29,22 +29,10 @@ exports.handler = async function(event, context) {
     }
 
     // --- ストリートファイター6の知識ベース（AIが参照する情報源） ---
-    // この知識ベースはAIへの参考情報として渡すが、プロンプトの長さ制限に注意する。
-    // 各スキル軸、ランク帯、アドバイスのタイプ（典型例、課題、練習方法）に分けて細かく記述。
+    // このオブジェクト自体はJavaScriptの構文として正しく記述してください。
+    // AIへのプロンプトには、この中から関連する情報だけを抽出して渡します。
     const sf6KnowledgeBase = {
-        general: [
-            "ストリートファイター6の読み合いでは、相手の行動を予測し、適切な行動で返すことが重要です。",
-            "ドライブゲージ管理は攻めにも守りにも不可欠です。バーンアウトには特に注意しましょう。",
-            "ドライブインパクトは強力な切り返し手段ですが、返されると大ダメージを受けます。",
-            "ドライブラッシュは奇襲やコンボ延長に有効ですが、ゲージ消費が大きいシステムです。",
-            "SA（スーパーアーツ）は試合をひっくり返す力を持つので、使いどころを慎重に見極めましょう。",
-            "有利フレーム、不利フレームの知識は立ち回りの基本です。フレーム表も参考に。",
-            "確定反撃（確反）を確実に決めることで、相手にプレッシャーを与えられます。",
-            "対空は基本中の基本です。相手のジャンプ攻撃をしっかり落としましょう。",
-            "投げ抜けは、相手の投げからの択を拒否するために必須です。",
-            "シミーは、投げを嫌がって後ろ歩きやジャンプする相手に有効な崩し方です。",
-            "起き攻めは、相手がダウンした後の攻防です。起き上がりの選択肢を読みましょう。"
-        ],
+        // スキル軸ごとの詳細な知識
         patternRecognition: {
             "Bronze": {
                 typicalIssues: "相手の単調な飛び込みや突進技に何度も当たってしまう。相手が同じ行動を繰り返していることに気づかない。",
@@ -279,6 +267,7 @@ exports.handler = async function(event, context) {
     }
 
     // AIへの最終プロンプト
+    // 知識ベース全体を文字列化せず、関連する部分だけを抽出してプロンプトに組み込む
     const prompt = `あなたはストリートファイター6の専門家であり、最高のコーチです。
 ユーザーは現在のランクが「${playerRank}」で、AIアドバイスレベルを「${adviceLevel}」と指定しています。
 以下の診断結果と、ユーザーの「今日の気づき・課題・具体例」を総合的に考慮し、ストリートファイター6の攻略に特化した、具体的かつ実践的なアドバイスを生成してください。
@@ -287,9 +276,6 @@ exports.handler = async function(event, context) {
 ${scoreDetailsPrompt}
 ${freeTextPrompt}
 
-### 知識ベース:
-${JSON.stringify(sf6KnowledgeBase)}
-
 ### 回答の構成とルール:
 * 回答は必ず以下の3つのセクションに分けて出力してください。セクション名も必須です。
     1.  **【典型例・今の状況】**
@@ -297,12 +283,35 @@ ${JSON.stringify(sf6KnowledgeBase)}
     3.  **【具体的な練習方法・アドバイス】**
 * **各セクションの間に必ず空行（改行2つ `\\n\\n`）を入れてください。**
 * **各セクションは最大でも3〜5行程度**の簡潔な文章にまとめてください。余計な情報は含めず、核心を突いた内容にしてください。
-* **上記の「知識ベース」から最優先で情報を引用・要約し、自然な文章に組み込んでください。** 直接記載せず、ユーザーへのアドバイスとして活用してください。特にストリートファイター6のシステムや用語を積極的に使い、具体的にアドバイスしてください。
+* **ストリートファイター6のシステムや用語を積極的に使い、具体的にアドバイスしてください。**
 * **架空のコンボや誤った技名は絶対に生成しないでください。** 具体例を挙げる際は、知識ベースにある一般的なシステム（例: ドライブインパクト、パリィ、SAなど）に関するものを優先するか、具体的な技名ではなく「対空技」「確定反撃コンボ」といった汎用的な表現を使ってください。
 * ユーザーの「今日の気づき・課題・具体例」の悩みに直接寄り添ったアドバイスを必ず含んでください。
 * 必ず日本語で出力してください。
 
-${levelInstruction}それぞれの強み・伸ばすと良い能力や練習アドバイスを教えてください。`;
+${levelInstruction}それぞれの強み・伸ばすと良い能力や練習アドバイスを教えてください。
+
+---
+### 参考情報（AIが参照するためのスト6知識ベース、直接引用せず自然な文章で組み込むこと）:
+${JSON.stringify(sf6KnowledgeBase.general)}
+
+${getSkillNameInJapanese('patternRecognition')}関連知識:
+${JSON.stringify(sf6KnowledgeBase.patternRecognition[playerRank])}
+
+${getSkillNameInJapanese('prediction')}関連知識:
+${JSON.stringify(sf6KnowledgeBase.prediction[playerRank])}
+
+${getSkillNameInJapanese('reactionSpeed')}関連知識:
+${JSON.stringify(sf6KnowledgeBase.reactionSpeed[playerRank])}
+
+${getSkillNameInJapanese('multiLayerReading')}関連知識:
+${JSON.stringify(sf6KnowledgeBase.multiLayerReading[playerRank])}
+
+${getSkillNameInJapanese('diversityOfOptions')}関連知識:
+${JSON.stringify(sf6KnowledgeBase.diversityOfOptions[playerRank])}
+
+${getSkillNameInJapanese('mentalResilience')}関連知識:
+${JSON.stringify(sf6KnowledgeBase.mentalResilience[playerRank])}
+`;
 
 
     let chatHistory = [];
